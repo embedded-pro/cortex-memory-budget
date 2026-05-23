@@ -1,0 +1,98 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "cortex-memory-budget config",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "top_n_symbols": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "top_n_source_files": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "regions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "name",
+                    "length_kb"
+                ],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "length_kb": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "origin": {
+                        "type": [
+                            "integer",
+                            "string"
+                        ]
+                    },
+                    "attrs": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "stack_size_symbols": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "minLength": 1
+            }
+        },
+        "heap_size_symbols": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "minLength": 1
+            }
+        },
+        "stack_limit_pairs": {
+            "type": "array",
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "minItems": 2,
+                "maxItems": 2
+            }
+        },
+        "heap_limit_pairs": {
+            "type": "array",
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "minItems": 2,
+                "maxItems": 2
+            }
+        },
+        "stack_size_bytes": {
+            "type": [
+                "integer",
+                "null"
+            ],
+            "minimum": 0
+        },
+        "heap_size_bytes": {
+            "type": [
+                "integer",
+                "null"
+            ],
+            "minimum": 0
+        }
+    }
+}

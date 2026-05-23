@@ -1,0 +1,44 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+
+# Type-check / lint caches
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Virtualenv
+.venv/
+venv/
+env/
+
+# Build artefacts in examples — keep ELFs but ignore intermediates
+examples/**/*.o
+examples/**/*.map
+examples/**/*.lst
+examples/**/out/
+examples/**/build/
+
+# Tooling output
+*.log

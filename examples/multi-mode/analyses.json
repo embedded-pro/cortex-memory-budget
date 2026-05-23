@@ -1,0 +1,14 @@
+[
+    {
+        "label": "release",
+        "config_path": "release.json",
+        "elf_path": "firmware.elf",
+        "linker_script": "link.ld"
+    },
+    {
+        "label": "strict",
+        "config_path": "strict.json",
+        "elf_path": "firmware.elf",
+        "linker_script": "link.ld"
+    }
+]

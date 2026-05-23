@@ -1,0 +1,7 @@
+{
+    "top_n_symbols": 5,
+    "thresholds": {
+        "flash_pct": 50,
+        "ram_pct": 50
+    }
+}

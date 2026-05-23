@@ -1,0 +1,8 @@
+{
+    "top_n_symbols": 15,
+    "top_n_sources": 10,
+    "thresholds": {
+        "flash_pct": 90,
+        "ram_pct": 80
+    }
+}

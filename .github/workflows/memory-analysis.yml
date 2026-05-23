@@ -1,0 +1,108 @@
+name: Memory Analysis (reusable)
+
+# Reusable workflow that wraps the composite ./action so consumers can call it
+# with `uses: embedded-pro/cortex-memory-budget/.github/workflows/memory-analysis.yml@<ref>`.
+#
+# Build the ELF in a job that uploads it as an artifact named `elf-artifact`
+# (configurable), then call this workflow. To enable diff mode also upload a
+# baseline ELF artifact.
+
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        description: 'Path to the memory-analysis JSON config file (in the consumer repo).'
+        required: true
+        type: string
+      elf-artifact-name:
+        description: 'Artifact name containing the current ELF.'
+        required: true
+        type: string
+      elf-path:
+        description: 'Path to the ELF inside the downloaded artifact.'
+        required: true
+        type: string
+      baseline-elf-artifact-name:
+        description: 'Optional artifact name containing the baseline ELF.'
+        required: false
+        type: string
+        default: ''
+      baseline-elf-path:
+        description: 'Path to the baseline ELF inside its artifact.'
+        required: false
+        type: string
+        default: ''
+      target:
+        required: true
+        type: string
+      build-config:
+        required: true
+        type: string
+      cortex:
+        required: false
+        type: string
+        default: 'm4'
+      linker-script-path:
+        required: false
+        type: string
+        default: ''
+      fail-over-flash-pct:
+        required: false
+        type: string
+        default: ''
+      fail-over-ram-pct:
+        required: false
+        type: string
+        default: ''
+      python-version:
+        required: false
+        type: string
+        default: '3.11'
+      package-version:
+        required: false
+        type: string
+        default: ''
+      runs-on:
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  memory-analysis:
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Checkout consumer repo
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955  # v4.3.0
+
+      - name: Download current ELF artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: ${{ inputs.elf-artifact-name }}
+          path: elf
+
+      - name: Download baseline ELF artifact
+        if: ${{ inputs.baseline-elf-artifact-name != '' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: ${{ inputs.baseline-elf-artifact-name }}
+          path: baseline-elf
+
+      - name: Run memory analysis
+        uses: embedded-pro/cortex-memory-budget@v0  # pinned tag; or use a SHA
+        with:
+          config-path: ${{ inputs.config-path }}
+          elf-path: elf/${{ inputs.elf-path }}
+          baseline-elf-path: ${{ inputs.baseline-elf-artifact-name == '' && '' || format('baseline-elf/{0}', inputs.baseline-elf-path) }}
+          target: ${{ inputs.target }}
+          build-config: ${{ inputs.build-config }}
+          cortex: ${{ inputs.cortex }}
+          linker-script-path: ${{ inputs.linker-script-path }}
+          fail-over-flash-pct: ${{ inputs.fail-over-flash-pct }}
+          fail-over-ram-pct: ${{ inputs.fail-over-ram-pct }}
+          python-version: ${{ inputs.python-version }}
+          package-version: ${{ inputs.package-version }}

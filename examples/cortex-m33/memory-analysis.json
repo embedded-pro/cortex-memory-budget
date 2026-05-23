@@ -1,0 +1,6 @@
+{
+    "thresholds": {
+        "flash_pct": 80,
+        "ram_pct": 75
+    }
+}

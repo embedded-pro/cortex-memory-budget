@@ -1,0 +1,225 @@
+name: 'Cortex Memory Budget'
+description: >-
+  Static flash/RAM footprint analysis for ARM Cortex-M (M0/M4/M7/M33)
+  binaries. Produces a per-region utilisation report, top-symbol and
+  per-source-file breakdowns, an optional diff vs. a baseline ELF, a PR
+  comment, a GitHub Actions step summary and a JSON metrics file.
+author: 'cortex-memory-budget contributors'
+
+branding:
+  icon: 'database'
+  color: 'blue'
+
+inputs:
+  config-path:
+    description: 'Path to the memory-analysis JSON config file.'
+    required: true
+  elf-path:
+    description: 'Path to the ELF binary to analyze.'
+    required: true
+  baseline-elf-path:
+    description: 'Optional baseline ELF to diff against.'
+    required: false
+    default: ''
+  target:
+    description: 'Target board identifier (free-form label).'
+    required: true
+  build-config:
+    description: 'Build configuration label (Release, Debug, RelWithDebInfo, …).'
+    required: true
+  cortex:
+    description: 'Cortex-M variant (m0 | m4 | m7 | m33).'
+    required: false
+    default: 'm4'
+  linker-script-path:
+    description: 'Optional linker script for automatic region detection.'
+    required: false
+    default: ''
+  output-dir:
+    description: 'Directory where reports and metrics are written.'
+    required: false
+    default: 'memory-analysis'
+  objdump:
+    description: 'Path to objdump (defaults to arm-none-eabi-objdump).'
+    required: false
+    default: 'arm-none-eabi-objdump'
+  nm:
+    description: 'Path to nm (defaults to arm-none-eabi-nm).'
+    required: false
+    default: 'arm-none-eabi-nm'
+  addr2line:
+    description: 'Path to addr2line (defaults to arm-none-eabi-addr2line).'
+    required: false
+    default: 'arm-none-eabi-addr2line'
+  fail-over-flash-pct:
+    description: 'Fail when any flash region exceeds this percentage.'
+    required: false
+    default: ''
+  fail-over-ram-pct:
+    description: 'Fail when any RAM region exceeds this percentage.'
+    required: false
+    default: ''
+  python-version:
+    description: 'Python version to set up.'
+    required: false
+    default: '3.11'
+  package-version:
+    description: >-
+      pip-installable version specifier for cortex-memory-budget (e.g.
+      "==0.1.0" or "@git+https://…"). Empty installs the latest from PyPI.
+    required: false
+    default: ''
+  post-comment:
+    description: 'When true, post/update a PR comment with the results.'
+    required: false
+    default: 'true'
+  upload-artifacts:
+    description: 'When true, upload the output directory as an artifact.'
+    required: false
+    default: 'true'
+  artifact-name:
+    description: 'Name for the uploaded artifact.'
+    required: false
+    default: 'memory-analysis'
+
+outputs:
+  output-dir:
+    description: 'Absolute path to the directory containing the generated reports.'
+    value: ${{ steps.run.outputs.output-dir }}
+  flash-bytes:
+    description: 'Total flash image bytes.'
+    value: ${{ steps.run.outputs.flash-bytes }}
+  ram-bytes:
+    description: 'Total RAM bytes (static + stack + heap).'
+    value: ${{ steps.run.outputs.ram-bytes }}
+  flash-pct:
+    description: 'Maximum flash region utilisation percentage.'
+    value: ${{ steps.run.outputs.flash-pct }}
+  ram-pct:
+    description: 'Maximum RAM region utilisation percentage.'
+    value: ${{ steps.run.outputs.ram-pct }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate cortex variant
+      shell: bash
+      run: |
+        case "${{ inputs.cortex }}" in
+          m0|m4|m7|m33) ;;
+          *) echo "::error::Invalid cortex variant '${{ inputs.cortex }}' (allowed: m0, m4, m7, m33)"; exit 1 ;;
+        esac
+
+    - name: Set up Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install cortex-memory-budget
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ -n "${{ inputs.package-version }}" ]]; then
+          python -m pip install --quiet "cortex-memory-budget${{ inputs.package-version }}"
+        else
+          python -m pip install --quiet cortex-memory-budget
+        fi
+
+    - name: Run memory analysis
+      id: run
+      shell: bash
+      run: |
+        set -euo pipefail
+        BASELINE_FLAG=""
+        if [[ -n "${{ inputs.baseline-elf-path }}" ]]; then
+          BASELINE_FLAG="--baseline-elf ${{ inputs.baseline-elf-path }}"
+        fi
+        LD_FLAG=""
+        if [[ -n "${{ inputs.linker-script-path }}" ]]; then
+          LD_FLAG="--linker-script ${{ inputs.linker-script-path }}"
+        fi
+        FLASH_FLAG=""
+        if [[ -n "${{ inputs.fail-over-flash-pct }}" ]]; then
+          FLASH_FLAG="--fail-over-flash-pct ${{ inputs.fail-over-flash-pct }}"
+        fi
+        RAM_FLAG=""
+        if [[ -n "${{ inputs.fail-over-ram-pct }}" ]]; then
+          RAM_FLAG="--fail-over-ram-pct ${{ inputs.fail-over-ram-pct }}"
+        fi
+
+        cortex-memory-budget "${{ inputs.config-path }}" \
+          --elf "${{ inputs.elf-path }}" \
+          --target "${{ inputs.target }}" \
+          --build-config "${{ inputs.build-config }}" \
+          --cortex "${{ inputs.cortex }}" \
+          --output-dir "${{ inputs.output-dir }}" \
+          --objdump "${{ inputs.objdump }}" \
+          --nm "${{ inputs.nm }}" \
+          --addr2line "${{ inputs.addr2line }}" \
+          $BASELINE_FLAG $LD_FLAG $FLASH_FLAG $RAM_FLAG
+
+        echo "output-dir=$(realpath "${{ inputs.output-dir }}")" >> "$GITHUB_OUTPUT"
+        python - <<'PY' >> "$GITHUB_OUTPUT"
+        import json, os
+        with open(os.path.join("${{ inputs.output-dir }}", "memory_metrics.json"), encoding="utf-8") as fh:
+            m = json.load(fh)
+        flash_pct = max((r["used_pct"] for r in m["regions"] if any(t in r["name"].upper() for t in ("FLASH","ROM"))), default=0.0)
+        ram_pct = max((r["used_pct"] for r in m["regions"] if any(t in r["name"].upper() for t in ("RAM","SRAM","DTCM","ITCM","AXI"))), default=0.0)
+        print(f"flash-bytes={m['flash_bytes']}")
+        print(f"ram-bytes={m['ram_total_bytes']}")
+        print(f"flash-pct={flash_pct:.3f}")
+        print(f"ram-pct={ram_pct:.3f}")
+        PY
+
+    - name: Append step summary
+      shell: bash
+      run: |
+        if [[ -f "${{ inputs.output-dir }}/memory_report.md" ]]; then
+          cat "${{ inputs.output-dir }}/memory_report.md" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Post PR comment
+      if: ${{ inputs.post-comment == 'true' && github.event_name == 'pull_request' }}
+      uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          const commentPath = path.join('${{ inputs.output-dir }}', 'pr_comment.md');
+          if (!fs.existsSync(commentPath)) {
+            core.warning(`PR comment file not found: ${commentPath}`);
+            return;
+          }
+          const body = fs.readFileSync(commentPath, 'utf8');
+          const marker = '<!-- cortex-memory-budget-comment -->';
+
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+          const existing = comments.find(c => c.body && c.body.includes(marker));
+
+          if (existing) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existing.id,
+              body,
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+          }
+
+    - name: Upload analysis artifacts
+      if: ${{ inputs.upload-artifacts == 'true' }}
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v5.0.0
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.output-dir }}
+        if-no-files-found: warn
