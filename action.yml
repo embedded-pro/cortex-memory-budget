@@ -1,9 +1,11 @@
 name: 'Cortex Memory Budget'
 description: >-
   Static flash/RAM footprint analysis for ARM Cortex-M (M0/M4/M7/M33)
-  binaries. Produces a per-region utilisation report, top-symbol and
-  per-source-file breakdowns, an optional diff vs. a baseline ELF, a PR
-  comment, a GitHub Actions step summary and a JSON metrics file.
+  binaries. Supports single-mode (one ELF / one config) and multi-mode
+  (multiple critical builds via an `analyses-json` array). Produces a
+  per-region utilisation report, top-symbol and per-source-file breakdowns,
+  an optional diff vs. a baseline ELF, a PR comment, a GitHub Actions step
+  summary and JSON metrics.
 author: 'cortex-memory-budget contributors'
 
 branding:
@@ -11,16 +13,35 @@ branding:
   color: 'blue'
 
 inputs:
-  config-path:
-    description: 'Path to the memory-analysis JSON config file.'
-    required: true
-  elf-path:
-    description: 'Path to the ELF binary to analyze.'
-    required: true
-  baseline-elf-path:
-    description: 'Optional baseline ELF to diff against.'
+  # ── Multi-mode (preferred for >1 binary) ──────────────────────────────────
+  analyses-json:
+    description: >-
+      JSON array of analysis entries for multi-mode runs. Each entry must have
+      "label", "elf_path", "config_path"; optional "baseline_elf",
+      "linker_script". When provided, the single-mode inputs (config-path,
+      elf-path, baseline-elf-path, linker-script-path) are ignored.
     required: false
     default: ''
+
+  # ── Single-mode ───────────────────────────────────────────────────────────
+  config-path:
+    description: 'Path to the memory-analysis JSON config file (single-mode).'
+    required: false
+    default: ''
+  elf-path:
+    description: 'Path to the ELF binary to analyze (single-mode).'
+    required: false
+    default: ''
+  baseline-elf-path:
+    description: 'Optional baseline ELF to diff against (single-mode).'
+    required: false
+    default: ''
+  linker-script-path:
+    description: 'Optional linker script for automatic region detection.'
+    required: false
+    default: ''
+
+  # ── Shared ────────────────────────────────────────────────────────────────
   target:
     description: 'Target board identifier (free-form label).'
     required: true
@@ -31,10 +52,6 @@ inputs:
     description: 'Cortex-M variant (m0 | m4 | m7 | m33).'
     required: false
     default: 'm4'
-  linker-script-path:
-    description: 'Optional linker script for automatic region detection.'
-    required: false
-    default: ''
   output-dir:
     description: 'Directory where reports and metrics are written.'
     required: false
@@ -42,7 +59,13 @@ inputs:
   objdump:
     description: 'Path to objdump (defaults to arm-none-eabi-objdump).'
     required: false
-    default: 'arm-none-eabi-objdump'
+    default: ''
+  objdump-tool:
+    description: >-
+      Alias for `objdump` (kept for backwards compatibility with existing
+      consumer workflows). When both are set, `objdump` wins.
+    required: false
+    default: ''
   nm:
     description: 'Path to nm (defaults to arm-none-eabi-nm).'
     required: false
@@ -52,11 +75,15 @@ inputs:
     required: false
     default: 'arm-none-eabi-addr2line'
   fail-over-flash-pct:
-    description: 'Fail when any flash region exceeds this percentage.'
+    description: >-
+      Fail when any flash region (single-mode) or the overall max flash region
+      across all analyses (multi-mode) exceeds this percentage.
     required: false
     default: ''
   fail-over-ram-pct:
-    description: 'Fail when any RAM region exceeds this percentage.'
+    description: >-
+      Fail when any RAM region (single-mode) or the overall max RAM region
+      across all analyses (multi-mode) exceeds this percentage.
     required: false
     default: ''
   python-version:
@@ -73,6 +100,12 @@ inputs:
     description: 'When true, post/update a PR comment with the results.'
     required: false
     default: 'true'
+  comment-marker:
+    description: >-
+      HTML-comment marker used to find and update the idempotent PR comment.
+      Override only to preserve continuity with a previous tool's marker.
+    required: false
+    default: '<!-- cortex-memory-budget-comment -->'
   upload-artifacts:
     description: 'When true, upload the output directory as an artifact.'
     required: false
@@ -86,17 +119,27 @@ outputs:
   output-dir:
     description: 'Absolute path to the directory containing the generated reports.'
     value: ${{ steps.run.outputs.output-dir }}
+  comment-path:
+    description: 'Path to the PR comment markdown (single- or multi-mode).'
+    value: ${{ steps.run.outputs.comment-path }}
+  summary-path:
+    description: 'Path to the step-summary markdown (single- or multi-mode).'
+    value: ${{ steps.run.outputs.summary-path }}
   flash-bytes:
-    description: 'Total flash image bytes.'
+    description: 'Total flash image bytes (single-mode only; empty in multi-mode).'
     value: ${{ steps.run.outputs.flash-bytes }}
   ram-bytes:
-    description: 'Total RAM bytes (static + stack + heap).'
+    description: 'Total RAM bytes (single-mode only; empty in multi-mode).'
     value: ${{ steps.run.outputs.ram-bytes }}
   flash-pct:
-    description: 'Maximum flash region utilisation percentage.'
+    description: >-
+      Maximum flash region utilisation percentage. Single-mode: across the
+      analyzed ELF. Multi-mode: overall max across all analyses.
     value: ${{ steps.run.outputs.flash-pct }}
   ram-pct:
-    description: 'Maximum RAM region utilisation percentage.'
+    description: >-
+      Maximum RAM region utilisation percentage. Single-mode: across the
+      analyzed ELF. Multi-mode: overall max across all analyses.
     value: ${{ steps.run.outputs.ram-pct }}
 
 runs:
@@ -109,6 +152,23 @@ runs:
           m0|m4|m7|m33) ;;
           *) echo "::error::Invalid cortex variant '${{ inputs.cortex }}' (allowed: m0, m4, m7, m33)"; exit 1 ;;
         esac
+
+    - name: Validate input combination
+      shell: bash
+      env:
+        ANALYSES_JSON: ${{ inputs.analyses-json }}
+      run: |
+        set -euo pipefail
+        if [[ -n "${ANALYSES_JSON}" ]]; then
+          if [[ -n "${{ inputs.config-path }}" || -n "${{ inputs.elf-path }}" ]]; then
+            echo "::warning::Both 'analyses-json' and single-mode inputs (config-path/elf-path) were provided. Running multi-mode; single-mode inputs are ignored."
+          fi
+        else
+          if [[ -z "${{ inputs.config-path }}" || -z "${{ inputs.elf-path }}" ]]; then
+            echo "::error::Either 'analyses-json' (multi-mode) or both 'config-path' and 'elf-path' (single-mode) must be provided."
+            exit 1
+          fi
+        fi
 
     - name: Set up Python
       uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
@@ -128,16 +188,20 @@ runs:
     - name: Run memory analysis
       id: run
       shell: bash
+      env:
+        ANALYSES_JSON: ${{ inputs.analyses-json }}
       run: |
         set -euo pipefail
-        BASELINE_FLAG=""
-        if [[ -n "${{ inputs.baseline-elf-path }}" ]]; then
-          BASELINE_FLAG="--baseline-elf ${{ inputs.baseline-elf-path }}"
+
+        # Resolve objdump (prefer `objdump`, fall back to `objdump-tool` alias).
+        OBJDUMP="${{ inputs.objdump }}"
+        if [[ -z "${OBJDUMP}" ]]; then
+          OBJDUMP="${{ inputs.objdump-tool }}"
         fi
-        LD_FLAG=""
-        if [[ -n "${{ inputs.linker-script-path }}" ]]; then
-          LD_FLAG="--linker-script ${{ inputs.linker-script-path }}"
+        if [[ -z "${OBJDUMP}" ]]; then
+          OBJDUMP="arm-none-eabi-objdump"
         fi
+
         FLASH_FLAG=""
         if [[ -n "${{ inputs.fail-over-flash-pct }}" ]]; then
           FLASH_FLAG="--fail-over-flash-pct ${{ inputs.fail-over-flash-pct }}"
@@ -146,57 +210,113 @@ runs:
         if [[ -n "${{ inputs.fail-over-ram-pct }}" ]]; then
           RAM_FLAG="--fail-over-ram-pct ${{ inputs.fail-over-ram-pct }}"
         fi
+        LD_FLAG=""
+        if [[ -n "${{ inputs.linker-script-path }}" ]]; then
+          LD_FLAG="--linker-script ${{ inputs.linker-script-path }}"
+        fi
 
-        cortex-memory-budget "${{ inputs.config-path }}" \
-          --elf "${{ inputs.elf-path }}" \
-          --target "${{ inputs.target }}" \
-          --build-config "${{ inputs.build-config }}" \
-          --cortex "${{ inputs.cortex }}" \
-          --output-dir "${{ inputs.output-dir }}" \
-          --objdump "${{ inputs.objdump }}" \
-          --nm "${{ inputs.nm }}" \
-          --addr2line "${{ inputs.addr2line }}" \
-          $BASELINE_FLAG $LD_FLAG $FLASH_FLAG $RAM_FLAG
+        OUTPUT_DIR="${{ inputs.output-dir }}"
+        mkdir -p "${OUTPUT_DIR}"
 
-        echo "output-dir=$(realpath "${{ inputs.output-dir }}")" >> "$GITHUB_OUTPUT"
-        python - <<'PY' >> "$GITHUB_OUTPUT"
-        import json, os
-        with open(os.path.join("${{ inputs.output-dir }}", "memory_metrics.json"), encoding="utf-8") as fh:
-            m = json.load(fh)
-        flash_pct = max((r["used_pct"] for r in m["regions"] if any(t in r["name"].upper() for t in ("FLASH","ROM"))), default=0.0)
-        ram_pct = max((r["used_pct"] for r in m["regions"] if any(t in r["name"].upper() for t in ("RAM","SRAM","DTCM","ITCM","AXI"))), default=0.0)
-        print(f"flash-bytes={m['flash_bytes']}")
-        print(f"ram-bytes={m['ram_total_bytes']}")
-        print(f"flash-pct={flash_pct:.3f}")
-        print(f"ram-pct={ram_pct:.3f}")
-        PY
+        if [[ -n "${ANALYSES_JSON}" ]]; then
+          # ── Multi-mode ──────────────────────────────────────────────────
+          ANALYSES_FILE="${OUTPUT_DIR}/analyses.json"
+          printf '%s' "${ANALYSES_JSON}" > "${ANALYSES_FILE}"
+
+          cortex-memory-budget-multi "${ANALYSES_FILE}" \
+            --target "${{ inputs.target }}" \
+            --build-config "${{ inputs.build-config }}" \
+            --cortex "${{ inputs.cortex }}" \
+            --output-dir "${OUTPUT_DIR}" \
+            --objdump "${OBJDUMP}" \
+            --nm "${{ inputs.nm }}" \
+            --addr2line "${{ inputs.addr2line }}" \
+            $LD_FLAG $FLASH_FLAG $RAM_FLAG
+
+          FLASH_PCT=$(python -c "import json; print(json.load(open('${OUTPUT_DIR}/combined_metrics.json'))['overall_max_flash_pct'])")
+          RAM_PCT=$(python -c "import json; print(json.load(open('${OUTPUT_DIR}/combined_metrics.json'))['overall_max_ram_pct'])")
+          echo "flash-bytes=" >> "$GITHUB_OUTPUT"
+          echo "ram-bytes=" >> "$GITHUB_OUTPUT"
+          echo "flash-pct=${FLASH_PCT}" >> "$GITHUB_OUTPUT"
+          echo "ram-pct=${RAM_PCT}" >> "$GITHUB_OUTPUT"
+          echo "comment-path=${OUTPUT_DIR}/combined_pr_comment.md" >> "$GITHUB_OUTPUT"
+          # The multi CLI does not emit a dedicated step-summary file; reuse
+          # the combined PR comment so the same content appears in the job
+          # summary.
+          echo "summary-path=${OUTPUT_DIR}/combined_pr_comment.md" >> "$GITHUB_OUTPUT"
+        else
+          # ── Single-mode ─────────────────────────────────────────────────
+          BASELINE_FLAG=""
+          if [[ -n "${{ inputs.baseline-elf-path }}" ]]; then
+            BASELINE_FLAG="--baseline-elf ${{ inputs.baseline-elf-path }}"
+          fi
+
+          cortex-memory-budget "${{ inputs.config-path }}" \
+            --elf "${{ inputs.elf-path }}" \
+            --target "${{ inputs.target }}" \
+            --build-config "${{ inputs.build-config }}" \
+            --cortex "${{ inputs.cortex }}" \
+            --output-dir "${OUTPUT_DIR}" \
+            --objdump "${OBJDUMP}" \
+            --nm "${{ inputs.nm }}" \
+            --addr2line "${{ inputs.addr2line }}" \
+            $BASELINE_FLAG $LD_FLAG $FLASH_FLAG $RAM_FLAG
+
+          FLASH_BYTES=$(python -c "import json; print(json.load(open('${OUTPUT_DIR}/memory_metrics.json'))['flash_bytes'])")
+          RAM_BYTES=$(python -c "import json; print(json.load(open('${OUTPUT_DIR}/memory_metrics.json'))['ram_total_bytes'])")
+          FLASH_PCT=$(python -c "import json; m=json.load(open('${OUTPUT_DIR}/memory_metrics.json')); print(f\"{max((r['used_pct'] for r in m['regions'] if any(t in r['name'].upper() for t in ('FLASH','ROM'))), default=0.0):.3f}\")")
+          RAM_PCT=$(python -c "import json; m=json.load(open('${OUTPUT_DIR}/memory_metrics.json')); print(f\"{max((r['used_pct'] for r in m['regions'] if any(t in r['name'].upper() for t in ('RAM','SRAM','DTCM','ITCM','AXI'))), default=0.0):.3f}\")")
+          echo "flash-bytes=${FLASH_BYTES}" >> "$GITHUB_OUTPUT"
+          echo "ram-bytes=${RAM_BYTES}" >> "$GITHUB_OUTPUT"
+          echo "flash-pct=${FLASH_PCT}" >> "$GITHUB_OUTPUT"
+          echo "ram-pct=${RAM_PCT}" >> "$GITHUB_OUTPUT"
+          echo "comment-path=${OUTPUT_DIR}/pr_comment.md" >> "$GITHUB_OUTPUT"
+          echo "summary-path=${OUTPUT_DIR}/memory_report.md" >> "$GITHUB_OUTPUT"
+        fi
+
+        echo "output-dir=$(realpath "${OUTPUT_DIR}")" >> "$GITHUB_OUTPUT"
 
     - name: Append step summary
       shell: bash
       run: |
-        if [[ -f "${{ inputs.output-dir }}/memory_report.md" ]]; then
-          cat "${{ inputs.output-dir }}/memory_report.md" >> "$GITHUB_STEP_SUMMARY"
+        SUMMARY_PATH="${{ steps.run.outputs.summary-path }}"
+        if [[ -f "${SUMMARY_PATH}" ]]; then
+          cat "${SUMMARY_PATH}" >> "$GITHUB_STEP_SUMMARY"
         fi
 
     - name: Post PR comment
       if: ${{ inputs.post-comment == 'true' && github.event_name == 'pull_request' }}
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+      env:
+        COMMENT_PATH: ${{ steps.run.outputs.comment-path }}
+        COMMENT_MARKER: ${{ inputs.comment-marker }}
       with:
         script: |
           const fs = require('fs');
-          const path = require('path');
-          const commentPath = path.join('${{ inputs.output-dir }}', 'pr_comment.md');
+          const commentPath = process.env.COMMENT_PATH;
+          const marker = process.env.COMMENT_MARKER;
+          if (!commentPath) {
+            core.setFailed("COMMENT_PATH env var is empty; the 'Run memory analysis' step did not produce a comment-path output.");
+            return;
+          }
+          if (!marker) {
+            core.setFailed("COMMENT_MARKER env var is empty; provide a non-empty 'comment-marker' input.");
+            return;
+          }
           if (!fs.existsSync(commentPath)) {
             core.warning(`PR comment file not found: ${commentPath}`);
             return;
           }
-          const body = fs.readFileSync(commentPath, 'utf8');
-          const marker = '<!-- cortex-memory-budget-comment -->';
+          let body = fs.readFileSync(commentPath, 'utf8');
+          if (!body.includes(marker)) {
+            body = `${marker}\n${body}`;
+          }
 
-          const { data: comments } = await github.rest.issues.listComments({
+          const comments = await github.paginate(github.rest.issues.listComments, {
             owner: context.repo.owner,
             repo: context.repo.repo,
             issue_number: context.issue.number,
+            per_page: 100,
           });
           const existing = comments.find(c => c.body && c.body.includes(marker));
 
@@ -218,7 +338,7 @@ runs:
 
     - name: Upload analysis artifacts
       if: ${{ inputs.upload-artifacts == 'true' }}
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v5.0.0
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
       with:
         name: ${{ inputs.artifact-name }}
         path: ${{ inputs.output-dir }}
