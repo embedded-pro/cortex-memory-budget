@@ -1,11 +1,5 @@
 name: 'Cortex Memory Budget'
-description: >-
-  Static flash/RAM footprint analysis for ARM Cortex-M (M0/M4/M7/M33)
-  binaries. Supports single-mode (one ELF / one config) and multi-mode
-  (multiple critical builds via an `analyses-json` array). Produces a
-  per-region utilisation report, top-symbol and per-source-file breakdowns,
-  an optional diff vs. a baseline ELF, a PR comment, a GitHub Actions step
-  summary and JSON metrics.
+description: 'Static flash/RAM footprint analysis for ARM Cortex-M (M0/M4/M7/M33) ELF binaries.'
 author: 'cortex-memory-budget contributors'
 
 branding:
