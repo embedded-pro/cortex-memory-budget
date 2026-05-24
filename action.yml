@@ -234,9 +234,6 @@ runs:
           echo "flash-pct=${FLASH_PCT}" >> "$GITHUB_OUTPUT"
           echo "ram-pct=${RAM_PCT}" >> "$GITHUB_OUTPUT"
           echo "comment-path=${OUTPUT_DIR}/combined_pr_comment.md" >> "$GITHUB_OUTPUT"
-          # The multi CLI does not emit a dedicated step-summary file; reuse
-          # the combined PR comment so the same content appears in the job
-          # summary.
           echo "summary-path=${OUTPUT_DIR}/combined_step_summary.md" >> "$GITHUB_OUTPUT"
         else
           # ── Single-mode ─────────────────────────────────────────────────

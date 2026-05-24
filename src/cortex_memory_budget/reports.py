@@ -160,17 +160,16 @@ def generate_diff_report(diff: list[DiffEntry], *, top_n: int = 30) -> str:
 
 
 def generate_combined_step_summary(
-    labels: list[str],
-    reports: list[MemoryReport],
+    analyses: list[tuple[str, MemoryReport]],
     *,
     top_n_symbols: int = 10,
 ) -> str:
-    if not reports:
+    if not analyses:
         return ""
-    first = reports[0]
+    first_report = analyses[0][1]
     parts: list[str] = []
-    parts.append(f"## 📦 Memory Budget — {first.target} ({first.cortex.upper()}, {first.build_config})\n\n")
-    for label, report in zip(labels, reports, strict=False):
+    parts.append(f"## \U0001f4e6 Memory Budget \u2014 {first_report.target} ({first_report.cortex.upper()}, {first_report.build_config})\n\n")
+    for label, report in analyses:
         parts.append(f"### {label}\n\n")
         parts.append(_region_table(report.regions))
         parts.append("\n<details><summary>Top symbols</summary>\n\n")
