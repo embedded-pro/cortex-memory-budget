@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cortex-memory-budget"
-version = "0.1.0"
+version = "0.2.0"
 description = "Static flash/RAM footprint analysis for ARM Cortex-M binaries (M0/M4/M7/M33)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
