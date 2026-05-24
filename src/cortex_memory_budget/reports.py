@@ -18,23 +18,17 @@ def _human(n: int) -> str:
     return f"{n / (1024 * 1024):.2f} MiB"
 
 
-def _bar(pct: float, width: int = 20) -> str:
-    pct_clamped = max(0.0, min(100.0, pct))
-    filled = round(width * pct_clamped / 100.0)
-    return "█" * filled + "·" * (width - filled)
-
-
 def _region_table(usages: list[RegionUsage]) -> str:
     if not usages:
         return "_No memory regions declared (provide a linker script or config override)._\n"
     rows = [
-        "| Region | Used | Free | Total | % | Bar |",
-        "| --- | ---: | ---: | ---: | ---: | --- |",
+        "| Region | Used | Free | Total | % |",
+        "| --- | ---: | ---: | ---: | ---: |",
     ]
     for u in usages:
         rows.append(
             f"| `{u.region.name}` | {_human(u.used_bytes)} | {_human(u.free_bytes)} | "
-            f"{_human(u.region.length)} | {u.used_pct:.1f}% | `{_bar(u.used_pct)}` |"
+            f"{_human(u.region.length)} | {u.used_pct:.1f}% |"
         )
     return "\n".join(rows) + "\n"
 
@@ -113,7 +107,9 @@ def generate_main_report(report: MemoryReport, *, top_n_symbols: int = 20, top_n
     parts.append("\n## Sections (largest first)\n\n")
     parts.append(_section_table(report))
     parts.append("\n## Top symbols\n\n")
+    parts.append("<details><summary>Show top symbols</summary>\n\n")
     parts.append(_symbol_table(report, top_n_symbols))
+    parts.append("</details>\n")
     parts.append("\n## Top source files\n\n")
     parts.append(_source_table(report, top_n_sources))
     if report.warnings:
@@ -137,7 +133,9 @@ def generate_pr_comment(
     )
     parts.append(_region_table(report.regions))
     parts.append("\n### Top symbols\n\n")
+    parts.append("<details><summary>Show top symbols</summary>\n\n")
     parts.append(_symbol_table(report, top_n_symbols))
+    parts.append("</details>\n")
     if diff:
         parts.append("\n### Changes vs. baseline\n\n")
         parts.append(generate_diff_report(diff, top_n=top_n_symbols))
@@ -159,6 +157,26 @@ def generate_diff_report(diff: list[DiffEntry], *, top_n: int = 30) -> str:
             f"{_human(entry.current_bytes)} | {delta_human} | {entry.status} |"
         )
     return "\n".join(rows) + "\n"
+
+
+def generate_combined_step_summary(
+    labels: list[str],
+    reports: list[MemoryReport],
+    *,
+    top_n_symbols: int = 10,
+) -> str:
+    if not reports:
+        return ""
+    first = reports[0]
+    parts: list[str] = []
+    parts.append(f"## 📦 Memory Budget — {first.target} ({first.cortex.upper()}, {first.build_config})\n\n")
+    for label, report in zip(labels, reports):
+        parts.append(f"### {label}\n\n")
+        parts.append(_region_table(report.regions))
+        parts.append("\n<details><summary>Top symbols</summary>\n\n")
+        parts.append(_symbol_table(report, top_n_symbols))
+        parts.append("</details>\n\n")
+    return "".join(parts)
 
 
 def generate_json_metrics(

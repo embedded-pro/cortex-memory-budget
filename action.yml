@@ -237,7 +237,7 @@ runs:
           # The multi CLI does not emit a dedicated step-summary file; reuse
           # the combined PR comment so the same content appears in the job
           # summary.
-          echo "summary-path=${OUTPUT_DIR}/combined_pr_comment.md" >> "$GITHUB_OUTPUT"
+          echo "summary-path=${OUTPUT_DIR}/combined_step_summary.md" >> "$GITHUB_OUTPUT"
         else
           # ── Single-mode ─────────────────────────────────────────────────
           BASELINE_FLAG=""
