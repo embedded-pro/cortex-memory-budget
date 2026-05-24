@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0](https://github.com/embedded-pro/cortex-memory-budget/compare/v0.1.0...v0.2.0) (2026-05-24)
+
+
+### Features
+
+* initial cortex-memory-budget v0.1.0 release ([141e371](https://github.com/embedded-pro/cortex-memory-budget/commit/141e371d72a4d7cfa318d26551ebaf64179bdde0))
+
+
+### Bug Fixes
+
+* action ([#10](https://github.com/embedded-pro/cortex-memory-budget/issues/10)) ([8202112](https://github.com/embedded-pro/cortex-memory-budget/commit/82021126c96f4daee482d3556e79449b888fc2cb))
+
 ## [0.1.0] - Unreleased
 
 ### Added

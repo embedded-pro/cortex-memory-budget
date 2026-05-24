@@ -30,7 +30,7 @@ from .sections import classify_section, parse_sections, summarise
 from .stack_heap import detect_stack_heap
 from .symbols import parse_symbols
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "PR_COMMENT_MARKER",
