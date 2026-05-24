@@ -11,9 +11,10 @@ from typing import Any
 from .analysis import analyze
 from .config import SUPPORTED_CORTEX, validate_config
 from .diff import diff_reports
-from .models import ConfigError, ToolError
+from .models import ConfigError, MemoryReport, ToolError
 from .reports import (
     PR_COMMENT_MARKER,
+    generate_combined_step_summary,
     generate_json_metrics,
     generate_pr_comment,
 )
@@ -64,6 +65,8 @@ def main(argv: list[str] | None = None) -> int:
 
     combined_pr: list[str] = [PR_COMMENT_MARKER, "\n## 📦 Memory budget (multi-mode)\n\n"]
     combined_metrics: list[dict[str, Any]] = []
+    collected_labels: list[str] = []
+    collected_reports: list[MemoryReport] = []
     overall_max_flash_pct = 0.0
     overall_max_ram_pct = 0.0
     exit_code = 0
@@ -109,6 +112,8 @@ def main(argv: list[str] | None = None) -> int:
 
         combined_pr.append(f"\n### {label}\n\n")
         combined_pr.append(generate_pr_comment(report, diff=diff).split(PR_COMMENT_MARKER, 1)[1])
+        collected_labels.append(label)
+        collected_reports.append(report)
         combined_metrics.append(
             {
                 "label": label,
@@ -122,6 +127,10 @@ def main(argv: list[str] | None = None) -> int:
                 overall_max_ram_pct = max(overall_max_ram_pct, u.used_pct)
 
     (out_dir / "combined_pr_comment.md").write_text("".join(combined_pr), encoding="utf-8")
+    (out_dir / "combined_step_summary.md").write_text(
+        generate_combined_step_summary(list(zip(collected_labels, collected_reports, strict=True))),
+        encoding="utf-8",
+    )
     (out_dir / "combined_metrics.json").write_text(
         json.dumps(
             {
