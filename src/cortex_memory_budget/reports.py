@@ -170,7 +170,7 @@ def generate_combined_step_summary(
     first = reports[0]
     parts: list[str] = []
     parts.append(f"## 📦 Memory Budget — {first.target} ({first.cortex.upper()}, {first.build_config})\n\n")
-    for label, report in zip(labels, reports):
+    for label, report in zip(labels, reports, strict=False):
         parts.append(f"### {label}\n\n")
         parts.append(_region_table(report.regions))
         parts.append("\n<details><summary>Top symbols</summary>\n\n")

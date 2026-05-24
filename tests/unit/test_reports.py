@@ -65,9 +65,9 @@ class TestMainReport:
         ):
             assert header in text
 
-    def test_region_bar_present(self) -> None:
+    def test_region_bar_absent(self) -> None:
         text = generate_main_report(_make_report())
-        assert "█" in text or "·" in text
+        assert "█" not in text and "·" not in text
 
 
 class TestPrComment:
